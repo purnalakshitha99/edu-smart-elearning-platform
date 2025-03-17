@@ -1,0 +1,6 @@
+/models
+/yolov5s.pt
+/logs.log
+myenv/
+__pycache__
+/pipe/__pycache__
