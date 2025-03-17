@@ -12,12 +12,14 @@ from groq import Groq
 from dotenv import load_dotenv
 from pymongo import MongoClient
 import random
-from bson import json_util  # Import for ObjectId serialization
+from bson import ObjectId, json_util  # Import for ObjectId serialization
+import datetime
 
 # MongoDB Configuration
 client = MongoClient("mongodb+srv://edusmart:13579@edu-smart.s7iq2.mongodb.net")
 db = client["myDatabase"]
 collection = db["qa_collection"]
+answer_collection = db['answer_collection']
 
 load_dotenv()
 api_key = os.environ.get("Groq_Api_Key")
@@ -205,53 +207,81 @@ def generate_qa():
 
 
 
-# @app.route("/get-qa", methods=["GET"])
-# def get_qa():
-#     try:
-#         # Fetch only quizzes where completed is False
-#         quizzes = list(collection.find({"completed": False})) #THIS IS THE MOST IMPORTANT PART
 
-#         # Convert ObjectId to string and properly serialize
-#         return json.dumps(quizzes, default=json_util.default), 200
-#     except Exception as e:
-#         print(f"Error fetching quizzes: {e}")
-#         return jsonify({"error": str(e)}), 500
-
-@app.route("/questions", methods=["GET"])
-def get_all_questions():
-    """
-    Retrieves all questions from the qa_collection in MongoDB.
-    """
+@app.route("/get-qa", methods=["GET"])
+def get_qa():
     try:
-        questions = list(qa_collection.find({}))  # Fetch all documents
-        return Response(json_util.dumps(questions, default=json_util.default), mimetype='application/json'), 200
+        # Fetch quizzes where completed is False, including necessary fields
+        quizzes = list(collection.find(
+            {"completed": False}, 
+            {"_id": 1, "name": 1, "time_limit": 1, "questions": 1, "answer": 1, "completed": 1}
+        ))  
+
+        # Convert ObjectId to string and calculate question length
+        for quiz in quizzes:
+            quiz["_id"] = str(quiz["_id"])
+            quiz["question_length"] = len(quiz["questions"]) if "questions" in quiz and isinstance(quiz["questions"], list) else 0
+
+        # Get total number of quizzes
+        total_quizzes = len(quizzes)
+
+        return jsonify(quizzes), 200
     except Exception as e:
-        logging.exception("Error fetching all questions.")
+        print(f"Error fetching quizzes: {e}")
         return jsonify({"error": str(e)}), 500
+
+    
+#Get one question from object id
+
+@app.route("/get-qa/<quiz_id>", methods=["GET"])
+def get_single_qa(quiz_id):
+    try:
+        # Convert the provided quiz_id to ObjectId
+        quiz = collection.find_one(
+            {"_id": ObjectId(quiz_id)}, 
+            {"_id": 1, "name": 1, "time_limit": 1, "questions": 1, "answer": 1, "completed": 1}
+        )
+
+        if not quiz:
+            return jsonify({"error": "Quiz not found"}), 404
+
+        # Convert ObjectId to string
+        quiz["_id"] = str(quiz["_id"])
+        quiz["question_length"] = len(quiz["questions"]) if "questions" in quiz and isinstance(quiz["questions"], list) else 0
+
+        return jsonify(quiz), 200
+    except Exception as e:
+        print(f"Error fetching quiz: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 def save_exam_report(user_id, exam_id, score):
     try:
+        timestamp = datetime.datetime.now()
         report_data = {
             "user_id": user_id,
             "exam_id": exam_id,
             "score": score,
-            "timestamp": datetime.datetime.now()
+            "timestamp": timestamp
         }
-        result = report_collection.insert_one(report_data)
-        return str(result.inserted_id)  # Return the inserted report ID as string
+        result = answer_collection.insert_one(report_data)  # Save answers to answer_collection
+        answer_id = str(result.inserted_id)  # Get the ID of the inserted answer
+
+        # Update the QA collection to set completed=True for the exam
+        collection.update_one(
+            {"_id": ObjectId(exam_id)},  # Find the exam by its ID
+            {"$set": {"completed": True}}  # Set the completed field to True
+        )
+
+        return answer_id  # Return the answer ID
+
     except Exception as e:
         print(f"Error saving exam report: {e}")
+        traceback.print_exc()
         return None
+    
 
-# Helper function to retrieve exam reports for a user
-def get_exam_reports_for_user(user_id):
-    try:
-        # Find the reports and covert them to proper JSON format
-        reports = list(report_collection.find({"user_id": user_id}))
-        return json.dumps(reports, default=json_util.default)
-    except Exception as e:
-        print(f"Error fetching exam reports: {e}")
-        return []
+
 
 # Backend to retrieve Exam from the front end
 @app.route("/get-qa/<exam_id>", methods=["GET"])
@@ -260,35 +290,44 @@ def get_qa_by_id(exam_id):
         quiz = qa_collection.find_one({"_id": ObjectId(exam_id)})
 
         if quiz:
+            # Convert ObjectId to string for JSON serialization
+            quiz["_id"] = str(quiz["_id"])  # Convert to string
             return jsonify(quiz), 200
         else:
             return jsonify({"error": "Quiz not found"}), 404
     except Exception as e:
         print(f"Error fetching quiz: {e}")
         return jsonify({"error": str(e)}), 500
-
+        
 # Assuming the following to make it accurate
 @app.route("/submit-exam", methods=["POST"])
 def submit_exam():
-    data = request.get_json()
+    try:
+        data = request.get_json()
 
-    if not data:
-        return jsonify({"error": "No data provided"}), 400
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
 
-    user_id = data.get("userId")
-    exam_id = data.get("examId")
-    score = data.get("score")
-    print("Recieved all the following data:", {user_id, exam_id, score})  # Check if they are correct
+        user_id = data.get("userId")
+        exam_id = data.get("examId")
+        score = data.get("score")
+        print("Received all the following data:", {user_id, exam_id, score})  # Check if they are correct
 
-    if not all([user_id, exam_id, score]):
-        return jsonify({"error": "Missing required data"}), 400
+        if not all([user_id, exam_id, score]):
+            return jsonify({"error": "Missing required data"}), 400
 
-    # Save the report
-    report_id = save_exam_report(user_id, exam_id, score)
-    if report_id:
-        return jsonify({"message": "Exam submitted successfully!", "report_id": report_id}), 200
-    else:
-        return jsonify({"error": "Failed to save exam report"}), 500
+        # Save the report
+        report_id = save_exam_report(user_id, exam_id, score)
+        if report_id:
+            return jsonify({"message": "Exam submitted successfully!", "report_id": report_id}), 200
+        else:
+            return jsonify({"error": "Failed to save exam report"}), 500
+
+    except Exception as e:
+        print(f"Error processing submission: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to process exam submission"}), 500
+
 
 # Helper function to serialize data
 def serialize_data(data):
