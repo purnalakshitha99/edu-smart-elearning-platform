@@ -1,0 +1,6 @@
+.idea/
+app/__pycache__/
+app/models/venv/
+app/venv/
+app/models/pretrained_models
+app/models

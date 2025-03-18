@@ -1,0 +1,6 @@
+Flask==2.1.1
+Flask-PyMongo==2.3.0
+Flask-CORS==2.1.0  # Use a compatible version of Flask-CORS
+dlib==19.22.0
+opencv-python==4.5.3.56
+numpy==1.21.0

@@ -26,6 +26,7 @@
 #     app.run(debug=True)
 
 
+import utils.session
 from flask import Flask
 from static.logger import logging
 from controllers.auth_controller import auth_controller
