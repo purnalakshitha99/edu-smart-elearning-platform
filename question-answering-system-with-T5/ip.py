@@ -212,24 +212,20 @@ def generate_qa():
 def get_qa():
     try:
         # Fetch quizzes where completed is False, including necessary fields
-        quizzes = list(collection.find(
-            {"completed": False}, 
-            {"_id": 1, "name": 1, "time_limit": 1, "questions": 1, "answer": 1, "completed": 1}
-        ))  
-
+        questions = list(collection.find(
+            {"complete": False},
+            {"_id": 1, "name": 1, "time_limit": 1, "questions": 1, "completed": 1}
+        ))
+      
         # Convert ObjectId to string and calculate question length
-        for quiz in quizzes:
-            quiz["_id"] = str(quiz["_id"])
-            quiz["question_length"] = len(quiz["questions"]) if "questions" in quiz and isinstance(quiz["questions"], list) else 0
+        for question in questions:
+            question["_id"] = str(question["_id"])
+            
 
-        # Get total number of quizzes
-        total_quizzes = len(quizzes)
-
-        return jsonify(quizzes), 200
+        return json_util.dumps(questions, default=json_util.default), 200
     except Exception as e:
-        print(f"Error fetching quizzes: {e}")
+        logging.exception(f"Error fetching quizzes: {e}")  # Log the traceback
         return jsonify({"error": str(e)}), 500
-
     
 #Get one question from object id
 
@@ -298,7 +294,23 @@ def get_qa_by_id(exam_id):
     except Exception as e:
         print(f"Error fetching quiz: {e}")
         return jsonify({"error": str(e)}), 500
-        
+    
+
+@app.route("/save-qa", methods=["POST"])
+def generate_qa_save():
+    qa = request.json
+
+    if not isinstance(qa, dict):  # Check if it's a dictionary (single object)
+        return jsonify({"error": "Invalid format. Expected a single QA object."}), 400
+
+    qa["complete"] = False  # Add the 'complete' attribute
+
+    try:
+        result = collection.insert_one(qa)  # Use insert_one
+        return jsonify({"message": "QA saved successfully", "inserted_id": str(result.inserted_id)}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # Assuming the following to make it accurate
 @app.route("/submit-exam", methods=["POST"])
 def submit_exam():
