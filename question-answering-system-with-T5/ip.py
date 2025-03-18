@@ -214,7 +214,7 @@ def get_qa():
         # Fetch quizzes where completed is False, including necessary fields
         questions = list(collection.find(
             {"complete": False},
-            {"_id": 1, "name": 1, "time_limit": 1, "questions": 1, "completed": 1}
+            {"_id": 1, "name": 1, "time_limit": 1, "questions": 1, "complete": 1}
         ))
       
         # Convert ObjectId to string and calculate question length
@@ -235,7 +235,7 @@ def get_single_qa(quiz_id):
         # Convert the provided quiz_id to ObjectId
         quiz = collection.find_one(
             {"_id": ObjectId(quiz_id)}, 
-            {"_id": 1, "name": 1, "time_limit": 1, "questions": 1, "answer": 1, "completed": 1}
+            {"_id": 1, "name": 1, "time_limit": 1, "questions": 1, "answer": 1, "complete": 1}
         )
 
         if not quiz:
@@ -266,7 +266,7 @@ def save_exam_report(user_id, exam_id, score):
         # Update the QA collection to set completed=True for the exam
         collection.update_one(
             {"_id": ObjectId(exam_id)},  # Find the exam by its ID
-            {"$set": {"completed": True}}  # Set the completed field to True
+            {"$set": {"complete": True}}  # Set the completed field to True
         )
 
         return answer_id  # Return the answer ID
